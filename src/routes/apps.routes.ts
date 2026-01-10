@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { appsController } from "../controllers/apps.controller";
-import { endpointsController } from "../controllers/endpoints.controller";
 
 export function appsRouter(): Router {
   const router = Router();

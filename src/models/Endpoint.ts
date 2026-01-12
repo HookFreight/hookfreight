@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import mongoose, { Schema } from "mongoose";
 
 export type EndpointAuthentication = {
@@ -16,6 +15,7 @@ export type Endpoint = {
   rate_limit?: number;
   rate_limit_duration?: number; 
   url: string;
+  hook_token?: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -38,7 +38,8 @@ const endpointSchema = new Schema<Endpoint>(
     is_active: { type: Boolean, default: false },
     rate_limit: { type: Number, min: 0, default: 0 },
     rate_limit_duration: { type: Number, min: 1_000, default: 60_000 },
-    url: { type: String, required: true, trim: true }
+    url: { type: String, required: true, trim: true },
+    hook_token: { type: String, trim: true, default: "", immutable: true, unique: true }
   },
   {
     timestamps: true,

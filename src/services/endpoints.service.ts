@@ -111,7 +111,7 @@ export const endpointsService = {
       throw httpError(404, "app_not_found",);
     }
 
-    const hookToken = randomBytes(32).toString("hex");
+    const hookToken = randomBytes(12).toString("hex");
     const endpoint = await EndpointModel.create({ ...parsedBody, hook_token: hookToken });
     return endpoint.toJSON();
   },

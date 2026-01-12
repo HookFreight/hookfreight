@@ -29,7 +29,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
 
   const httpErr = err as HttpError;
   const status = httpErr?.status ?? 500;
-  const message = httpErr?.message ?? "internal_error";
+  const message =
+    status === 500
+      ? "an error occured, please try again later."
+      : (httpErr?.message ?? "internal_error");
 
   console.error(err);
 

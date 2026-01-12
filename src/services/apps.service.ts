@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { z } from "zod";
 import { AppModel } from "../models/App";
+import { EndpointModel } from "../models/Endpoint";
 
 const MAX_LIST_LIMIT = 1000;
 
@@ -10,6 +11,7 @@ const objectIdSchema = z
   .refine((v) => mongoose.isValidObjectId(v), { message: "App ID not valid", });
 
 const appNameSchema = z.string().trim().min(1).max(200);
+
 const appDescriptionSchema = z.string().trim().max(5_000);
 
 const createAppSchema = z.preprocess(
@@ -40,7 +42,6 @@ const listAppsSchema = z.object({
     .transform((n) => Math.max(1, Math.min(MAX_LIST_LIMIT, n))),
   offset: z.coerce.number().int().default(0).transform((n) => Math.max(0, n))
 });
-
 
 export const appsService = {
   listApps: async (limit?: unknown, offset?: unknown) => {
@@ -74,10 +75,34 @@ export const appsService = {
     return app?.toJSON() ?? null;
   },
 
-  // TODO: DELETE ALL ENDPOINTS FOR THIS APP AND ALL EVENTS
   deleteApp: async (id: string) => {
     const parsedId = objectIdSchema.parse(id);
-    const deleted = await AppModel.findByIdAndDelete(parsedId);
-    return deleted?.toJSON() ?? null;
+
+    const session = await mongoose.startSession();
+    try {
+      const result = await session.withTransaction(async () => {
+
+        const appDoc = await AppModel.findById(parsedId).session(session);
+        if (!appDoc) {
+          return null;
+        }
+
+        const endpointsDeleteResult = await EndpointModel.deleteMany({
+          app_id: appDoc._id
+        }).session(session);
+
+        const deletedApp = await AppModel.findByIdAndDelete(appDoc._id).session(session);
+
+        return {
+          app: deletedApp?.toJSON() ?? null,
+          connected_endpoints: endpointsDeleteResult.deletedCount ?? 0
+        };
+      });
+
+      return result!;
+    } finally {
+      session.endSession();
+    }
   }
+
 };

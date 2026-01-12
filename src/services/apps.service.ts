@@ -30,7 +30,7 @@ const updateAppSchema = z.preprocess(
       description: appDescriptionSchema.optional()
     })
     .refine((val) => val.name !== undefined || val.description !== undefined, {
-      message: "Provide name or description field for update"
+      message: "Provide app name or description for update"
     })
 );
 

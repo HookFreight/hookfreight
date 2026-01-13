@@ -1,9 +1,12 @@
 import mongoose from "mongoose";
 import { z } from "zod";
+
 import { AppModel } from "../models/App";
 import { EndpointModel } from "../models/Endpoint";
+import { EventModel } from "../models/Event";
 
 const MAX_LIST_LIMIT = 1000;
+const DELETE_CHUNK_SIZE = 1000;
 
 const objectIdSchema = z
   .string()
@@ -80,29 +83,58 @@ export const appsService = {
 
     const session = await mongoose.startSession();
     try {
-      const result = await session.withTransaction(async () => {
+      return await session.withTransaction(async () => {
+        // Delete app first to confirm it exists (and to return it)
+        const deletedApp = await AppModel.findOneAndDelete({ _id: parsedId }, { session });
+        if (!deletedApp) return null;
 
-        const appDoc = await AppModel.findById(parsedId).session(session);
-        if (!appDoc) {
-          return null;
+        // Stream endpoint ids and delete events in chunks to avoid huge distinct arrays
+        let deletedEvents = 0;
+
+        const cursor = EndpointModel.find(
+          { app_id: parsedId },
+          { _id: 1 },
+          { session }
+        ).cursor();
+
+        let batch: mongoose.Types.ObjectId[] = [];
+
+        for await (const doc of cursor) {
+          batch.push(doc._id);
+
+          if (batch.length >= DELETE_CHUNK_SIZE) {
+            const r = await EventModel.deleteMany(
+              { endpoint_id: { $in: batch } },
+              { session }
+            );
+            deletedEvents += r.deletedCount ?? 0;
+            batch = [];
+          }
         }
 
-        const endpointsDeleteResult = await EndpointModel.deleteMany({
-          app_id: appDoc._id
-        }).session(session);
+        if (batch.length) {
+          const r = await EventModel.deleteMany(
+            { endpoint_id: { $in: batch } },
+            { session }
+          );
+          deletedEvents += r.deletedCount ?? 0;
+        }
 
-        const deletedApp = await AppModel.findByIdAndDelete(appDoc._id).session(session);
+        // Delete endpoints after events
+        const endpointsDeleteResult = await EndpointModel.deleteMany(
+          { app_id: parsedId },
+          { session }
+        );
 
         return {
-          app: deletedApp?.toJSON() ?? null,
-          connected_endpoints: endpointsDeleteResult.deletedCount ?? 0
+          app: deletedApp.toJSON(),
+          deleted_endpoints: endpointsDeleteResult.deletedCount ?? 0,
+          deleted_events: deletedEvents,
         };
       });
-
-      return result!;
     } finally {
-      session.endSession();
+      await session.endSession();
     }
-  }
+  },
 
 };

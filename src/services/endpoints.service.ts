@@ -4,17 +4,9 @@ import { randomBytes } from "node:crypto";
 
 import { EndpointModel } from "../models/Endpoint";
 import { AppModel } from "../models/App";
-
-type HttpError = Error & { status?: number; details?: unknown; code?: string };
+import { httpError } from "../utils/http-error";
 
 const MAX_LIST_LIMIT = 1000;
-
-function httpError(status: number, message: string, details?: unknown): HttpError {
-  const err = new Error(message) as HttpError;
-  err.status = status;
-  if (details !== undefined) err.details = details;
-  return err;
-}
 
 const createEndpointSchema = z.object({
   name: z.string().trim().min(1).max(200),

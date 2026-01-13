@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 
 import { EndpointModel } from "../models/Endpoint";
 import { AppModel } from "../models/App";
-import { httpError } from "../utils/http-error";
+import { httpError } from "../utils/http";
 
 const MAX_LIST_LIMIT = 1000;
 

@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { endpointsService } from "../services/endpoints.service";
+import { eventsService } from "../services/events.service";
 
 export const endpointsController = {
   createEndpoint: async (req: Request, res: Response) => {
@@ -20,7 +21,12 @@ export const endpointsController = {
   deleteEndpoint: async (req: Request, res: Response) => {
     const deleted = await endpointsService.deleteEndpoint(req.params.id);
     res.status(200).json({ message: "endpoint_deleted", data: deleted });
-  }
+  },
+
+  listEventsByEndpointId: async (req: Request, res: Response) => {
+    const events = await eventsService.listEventsByEndpointId(req.params.id, req.query.limit, req.query.offset);
+    res.status(200).json({ message: "events_listed", data: events });
+  },
 };
 
 

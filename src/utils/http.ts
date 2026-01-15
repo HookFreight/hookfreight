@@ -9,8 +9,6 @@ export function httpError(status: number, message: string, details?: unknown): H
   return err;
 }
 
-// Event Structure Functions
-
 function decodeBody(body: Buffer, encoding?: string | null): Buffer {
   const enc = (encoding ?? "").toLowerCase().trim();
 
@@ -52,10 +50,6 @@ export type EventHttpResponse = {
   source_url?: string;
 };
 
-/**
- * Converts various Buffer representations back into a real Buffer.
- * Handles: actual Buffer, MongoDB Binary, { type: 'Buffer', data: [...] } objects.
- */
 export function toBuffer(value: unknown): Buffer {
   if (Buffer.isBuffer(value)) return value;
 
@@ -87,10 +81,6 @@ export function toBuffer(value: unknown): Buffer {
   return Buffer.alloc(0);
 }
 
-/**
- * Normalizes an Event document/object into an API response shape.
- * Includes best-effort decoding + JSON parsing of the stored raw Buffer body.
- */
 export function eventToHttpResponse(event: any): EventHttpResponse {
   const headers: any = event?.headers ?? {};
 
@@ -138,5 +128,3 @@ export function eventToHttpResponse(event: any): EventHttpResponse {
     body
   };
 }
-
-

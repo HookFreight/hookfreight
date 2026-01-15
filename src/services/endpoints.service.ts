@@ -20,7 +20,8 @@ const createEndpointSchema = z.object({
   is_active: z.boolean().optional(),
   rate_limit: z.number().int().min(0).optional(),
   rate_limit_duration: z.number().int().min(1).max(86_400).optional(),
-  url: z.string().trim().min(1).max(5_000)
+  forward_url: z.string().trim().min(1).max(5_000).optional(),
+  forwarding_enabled: z.boolean().optional().default(false),
 });
 
 const objectIdSchema = z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "Invalid ID", });
@@ -78,7 +79,8 @@ const updateEndpointSchema = z.preprocess(
       is_active: optionalBoolean(),
       rate_limit: optionalNumber(z.number().int().min(0)),
       rate_limit_duration: optionalNumber(z.number().int().min(1).max(86_400)),
-      url: optionalNonEmptyString(1, 5_000)
+      forward_url: optionalNonEmptyString(1, 5_000),
+      forwarding_enabled: optionalBoolean(),
     }) 
     .refine(
       (val) =>
@@ -89,7 +91,8 @@ const updateEndpointSchema = z.preprocess(
         val.is_active !== undefined ||
         val.rate_limit !== undefined ||
         val.rate_limit_duration !== undefined ||
-        val.url !== undefined,
+        val.forward_url !== undefined ||
+        val.forwarding_enabled !== undefined,
       { message: "Provide at least one field to update" }
     )
 );
@@ -144,7 +147,9 @@ export const endpointsService = {
       runValidators: true
     });
 
-    if (!updated) throw httpError(404, "endpoint_not_found");
+    if (!updated) {
+      throw httpError(404, "endpoint_not_found");
+    }
     return updated.toJSON();
   },
 

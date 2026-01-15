@@ -5,9 +5,9 @@ import { z } from "zod";
 import { EventModel } from "../models/Event";
 import { EndpointModel } from "../models/Endpoint";
 import { eventToHttpResponse, httpError } from "../utils/http";
+import { deliveriesService } from "./deliveries.service";
 
 const MAX_LIST_LIMIT = 50;
-
 const ALLOWED_METHODS = new Set(["POST", "PUT", "PATCH", "GET"]);
 
 function firstHeaderValue(v: string | string[] | undefined): string | undefined {
@@ -50,6 +50,7 @@ export const eventsService = {
         }
 
         // TODO: MATCH HEADERS AND BODY AGAINST ENDPOINT CONFIGURATION. IF MATCH, RETURN 200.IF NOT, RETURN 400.
+        // TODO; ADD RATE LIMITING/RATE LIMITING DURATION AND HTTP TIMEOUT FROM ENDPOINT CONFIG.
 
         const bodyBuffer =
             Buffer.isBuffer(req.rawBody) ? req.rawBody :
@@ -76,6 +77,11 @@ export const eventsService = {
             user_agent: req.get("user-agent"),
             size_bytes: sizeBytes
         });
+
+        deliveriesService.handleEvent(event).catch((err) => {
+            console.error("[EventsService] Failed to queue event for delivery:", err);
+        });
+
         return event;
     },
 

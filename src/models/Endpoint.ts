@@ -14,7 +14,8 @@ export type Endpoint = {
   is_active?: boolean;
   rate_limit?: number;
   rate_limit_duration?: number; 
-  url: string;
+  forward_url: string;
+  forwarding_enabled?: boolean;
   hook_token?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -38,7 +39,8 @@ const endpointSchema = new Schema<Endpoint>(
     is_active: { type: Boolean, default: false },
     rate_limit: { type: Number, min: 0, default: 0 },
     rate_limit_duration: { type: Number, min: 1_000, default: 60_000 },
-    url: { type: String, required: true, trim: true },
+    forward_url: { type: String, required: false, trim: true, default: "" },
+    forwarding_enabled: { type: Boolean, default: false },
     hook_token: { type: String, trim: true, default: "", immutable: true, unique: true }
   },
   {

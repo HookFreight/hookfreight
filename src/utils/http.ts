@@ -56,7 +56,7 @@ export type EventHttpResponse = {
  * Converts various Buffer representations back into a real Buffer.
  * Handles: actual Buffer, MongoDB Binary, { type: 'Buffer', data: [...] } objects.
  */
-function toBuffer(value: unknown): Buffer {
+export function toBuffer(value: unknown): Buffer {
   if (Buffer.isBuffer(value)) return value;
 
   // MongoDB Binary / node-mongodb-native Binary has a `buffer` property

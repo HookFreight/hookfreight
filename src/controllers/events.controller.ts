@@ -4,7 +4,6 @@ import { eventsService } from "../services/events.service";
 export const eventsController = {
     createEvent: async (req: Request, res: Response) => {
         await eventsService.createEvent(req);
-
         res.status(200).json({ message: "event_created", data: null });
     },
 

@@ -11,6 +11,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "bullmq": "^5.66.5",
     "dotenv": "^16.4.5",
     "express": "^5.0.1",
     "mongoose": "^8.10.0",
@@ -24,5 +25,3 @@
     "typescript": "^5.7.2"
   }
 }
-
-

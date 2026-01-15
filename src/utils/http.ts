@@ -53,12 +53,10 @@ export type EventHttpResponse = {
 export function toBuffer(value: unknown): Buffer {
   if (Buffer.isBuffer(value)) return value;
 
-  // MongoDB Binary / node-mongodb-native Binary has a `buffer` property
   if (value && typeof value === "object" && "buffer" in value && Buffer.isBuffer((value as any).buffer)) {
     return (value as any).buffer;
   }
 
-  // JSON-serialized Buffer: { type: 'Buffer', data: number[] }
   if (
     value &&
     typeof value === "object" &&
@@ -68,17 +66,28 @@ export function toBuffer(value: unknown): Buffer {
     return Buffer.from((value as any).data);
   }
 
-  // Uint8Array or ArrayBuffer
   if (value instanceof Uint8Array) {
     return Buffer.from(value);
   }
 
-  // string fallback (maybe base64 or raw)
   if (typeof value === "string") {
     return Buffer.from(value, "utf8");
   }
 
   return Buffer.alloc(0);
+}
+
+export function parseBufferBody(value: unknown): unknown {
+  const buffer = toBuffer(value);
+  if (buffer.length === 0) return null;
+
+  const str = buffer.toString("utf8");
+
+  try {
+    return JSON.parse(str);
+  } catch {
+    return str;
+  }
 }
 
 export function eventToHttpResponse(event: any): EventHttpResponse {

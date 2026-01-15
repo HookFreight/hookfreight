@@ -2,15 +2,24 @@ import mongoose from "mongoose";
 import { request } from "undici";
 import { Queue, Worker, Job } from "bullmq";
 import IORedis from "ioredis";
+import { z } from "zod";
 
 import { DeliveryModel, Delivery, DeliveryStatus } from "../models/Delivery";
 import { EndpointModel, Endpoint } from "../models/Endpoint";
 import { Event, EventModel } from "../models/Event";
 import { config } from "../config";
-import { toBuffer } from "../utils/http";
+import { toBuffer, parseBufferBody } from "../utils/http";
 
 const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 const DELIVERY_QUEUE_NAME = "webhook-deliveries";
+const MAX_LIST_LIMIT = 1000;
+
+const objectIdSchema = z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "Invalid ID" });
+
+const listSchema = z.object({
+    limit: z.coerce.number().int().default(20).transform((n) => Math.max(1, Math.min(MAX_LIST_LIMIT, n))),
+    offset: z.coerce.number().int().default(0).transform((n) => Math.max(0, n))
+});
 
 type DeliveryJobData = {
     eventId: string;
@@ -26,16 +35,6 @@ type DeliveryResult = {
     responseBody?: Buffer;
     duration: number;
     errorMessage?: string;
-};
-
-type PaginatedDeliveries = {
-    data: Delivery[];
-    pagination: {
-        page: number;
-        limit: number;
-        total: number;
-        totalPages: number;
-    };
 };
 
 function parseRedisUrl(url: string) {
@@ -331,12 +330,15 @@ export const deliveriesService = {
         );
     },
 
-    retryDelivery: async (eventId: string): Promise<void> => {
-        if (!mongoose.isValidObjectId(eventId)) {
-            throw new Error("Invalid event ID");
+    retryDelivery: async (deliveryId: string): Promise<void> => {
+        const parsedDeliveryId = objectIdSchema.parse(deliveryId);
+
+        const delivery = await DeliveryModel.findById(parsedDeliveryId).lean<Delivery>().exec();
+        if (!delivery) {
+            throw new Error("Delivery not found");
         }
 
-        const event = await EventModel.findById(eventId).lean<Event>().exec();
+        const event = await EventModel.findById(delivery.event_id).lean<Event>().exec();
         if (!event) {
             throw new Error("Event not found");
         }
@@ -345,47 +347,36 @@ export const deliveriesService = {
         const job = await queue.add(
             "retry",
             {
-                eventId: eventId,
+                eventId: delivery.event_id.toString(),
                 endpointId: event.endpoint_id.toString(),
+                parentDeliveryId: parsedDeliveryId,
             },
             {
-                jobId: `retry-${eventId}-${Date.now()}`,
+                jobId: `retry-${parsedDeliveryId}-${Date.now()}`,
             }
         );
 
-        console.log(`[DeliveriesService] Manual retry queued for event ${eventId} (job: ${job.id})`);
+        console.log(`[DeliveriesService] Manual retry queued for delivery ${parsedDeliveryId} (job: ${job.id})`);
     },
 
-    getDeliveriesByEventId: async (
-        eventId: string,
-        page: number = 1,
-        limit: number = 20
-    ): Promise<PaginatedDeliveries> => {
-        if (!mongoose.isValidObjectId(eventId)) {
-            throw new Error("Invalid event ID");
-        }
+    getDeliveriesByEventId: async (eventId: string, limit?: unknown, offset?: unknown) => {
+        const parsedEventId = objectIdSchema.parse(eventId);
+        const parsed = listSchema.parse({ limit, offset });
 
-        const skip = (page - 1) * limit;
+        const docs = await DeliveryModel.find({ event_id: parsedEventId })
+            .sort({ createdAt: -1 })
+            .skip(parsed.offset)
+            .limit(parsed.limit + 1)
+            .lean<Delivery[]>()
+            .exec();
 
-        const [deliveries, total] = await Promise.all([
-            DeliveryModel.find({ event_id: eventId })
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(limit)
-                .lean<Delivery[]>()
-                .exec(),
-            DeliveryModel.countDocuments({ event_id: eventId }).exec()
-        ]);
+        const has_next = docs.length > parsed.limit;
+        const deliveries = docs.slice(0, parsed.limit).map((doc) => ({
+            ...doc,
+            response_body: parseBufferBody(doc.response_body)
+        }));
 
-        return {
-            data: deliveries,
-            pagination: {
-                page,
-                limit,
-                total,
-                totalPages: Math.ceil(total / limit)
-            }
-        };
+        return { deliveries, has_next, limit: parsed.limit, offset: parsed.offset };
     },
 
     getQueueStats: async (): Promise<{

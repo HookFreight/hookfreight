@@ -2,7 +2,7 @@
   "name": "hookfreight",
   "version": "0.1.0",
   "private": true,
-  "description": "HookFreight - OSS webhook inbox + replay engine (barebones)",
+  "description": "HookFreight - Open-source webhook inbox and replay engine.",
   "type": "commonjs",
   "main": "dist/server.js",
   "scripts": {

@@ -1,0 +1,34 @@
+# Dependencies
+node_modules
+
+# Build output (we build inside Docker)
+dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment files (pass via docker-compose or runtime)
+.env
+.env.*
+!env.example
+
+# Logs
+*.log
+logs
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+

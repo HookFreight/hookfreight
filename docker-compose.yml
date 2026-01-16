@@ -1,0 +1,41 @@
+services:
+  hookfreight:
+    build: .
+    ports:
+      - "3030:3030"
+    environment:
+      - HOOKFREIGHT_PORT=3030
+      - HOOKFREIGHT_HOST=0.0.0.0
+      - HOOKFREIGHT_BASE_URL=http://localhost:3030
+      - HOOKFREIGHT_MONGO_URI=mongodb://mongo:27017
+      - HOOKFREIGHT_MONGO_DB_NAME=hookfreight
+      - HOOKFREIGHT_REDIS_URL=redis://redis:6379
+      - HOOKFREIGHT_QUEUE_CONCURRENCY=5
+      - HOOKFREIGHT_QUEUE_MAX_RETRIES=5
+    depends_on:
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:
+

@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Endpoints service - business logic for Endpoint management.
+ *
+ * Provides CRUD operations for Endpoints with validation using Zod schemas.
+ * Generates unique hook_tokens for webhook URLs.
+ *
+ * @license Apache-2.0
+ */
+
 import mongoose from "mongoose";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
@@ -6,12 +15,22 @@ import { EndpointModel } from "../models/Endpoint";
 import { AppModel } from "../models/App";
 import { httpError } from "../utils/http";
 
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** Maximum number of items to return in a list query */
 const MAX_LIST_LIMIT = 1000;
 
+// ============================================================================
+// Validation Schemas
+// ============================================================================
+
+/** Schema for creating a new endpoint */
 const createEndpointSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(5_000).optional(),
-  app_id: z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "App ID not valid", }),
+  app_id: z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "App ID not valid" }),
   authentication: z.object({
     header_name: z.string().trim().min(1).max(200),
     header_value: z.string().trim().min(1).max(2000)
@@ -24,8 +43,10 @@ const createEndpointSchema = z.object({
   forwarding_enabled: z.boolean().optional().default(false),
 });
 
-const objectIdSchema = z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "Invalid ID", });
+/** Validates MongoDB ObjectId strings */
+const objectIdSchema = z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "Invalid ID" });
 
+/** Schema for list pagination parameters */
 const listSchema = z.object({
   limit: z.coerce
     .number()
@@ -35,16 +56,31 @@ const listSchema = z.object({
   offset: z.coerce.number().int().default(0).transform((n) => Math.max(0, n))
 });
 
+// ============================================================================
+// Update Schema Helpers
+// ============================================================================
+
+/** Converts empty strings to undefined for optional field handling */
 const emptyStringToUndefined = (v: unknown) =>
   typeof v === "string" && v.trim() === "" ? undefined : v;
+
+/** Converts null to undefined for consistent handling */
 const nullToUndefined = (v: unknown) => (v === null ? undefined : v);
 
+/** Creates an optional non-empty string schema with length constraints */
 const optionalNonEmptyString = (min: number, max: number) =>
   z.preprocess(emptyStringToUndefined, z.string().trim().min(min).max(max)).optional();
 
+/** Creates an optional number schema */
 const optionalNumber = (schema: z.ZodNumber) => z.preprocess(nullToUndefined, schema.optional());
+
+/** Creates an optional boolean schema */
 const optionalBoolean = () => z.preprocess(nullToUndefined, z.boolean().optional());
 
+/**
+ * Schema for updating authentication settings.
+ * Requires both header_name and header_value if either is provided.
+ */
 const updateAuthenticationSchema = z
   .preprocess(
     (v) => (v == null ? undefined : v),
@@ -59,7 +95,7 @@ const updateAuthenticationSchema = z
           (a.header_name !== undefined && a.header_value !== undefined),
         { message: "Provide both authentication.header_name and authentication.header_value" }
       )
-      // If user passes {}, or both empty strings, treat as "not provided"
+      // If both are undefined or empty, treat as "not provided"
       .transform((a) =>
         a.header_name === undefined && a.header_value === undefined
           ? undefined
@@ -68,6 +104,7 @@ const updateAuthenticationSchema = z
   )
   .optional();
 
+/** Schema for updating an endpoint (at least one field required) */
 const updateEndpointSchema = z.preprocess(
   (v) => (v == null ? {} : v),
   z
@@ -81,7 +118,7 @@ const updateEndpointSchema = z.preprocess(
       rate_limit_duration: optionalNumber(z.number().int().min(1).max(86_400)),
       forward_url: optionalNonEmptyString(1, 5_000),
       forwarding_enabled: optionalBoolean(),
-    }) 
+    })
     .refine(
       (val) =>
         val.name !== undefined ||
@@ -97,24 +134,55 @@ const updateEndpointSchema = z.preprocess(
     )
 );
 
+// ============================================================================
+// Service Methods
+// ============================================================================
+
+/**
+ * Endpoints service providing CRUD operations.
+ *
+ * All methods validate input using Zod schemas and throw on invalid data.
+ */
 export const endpointsService = {
+  /**
+   * Creates a new endpoint for an app.
+   *
+   * Generates a unique hook_token (24 hex characters) for the webhook URL.
+   * Validates that the parent app exists.
+   *
+   * @param body - Request body with endpoint configuration
+   * @returns The created endpoint document
+   * @throws HttpError(404) if the parent app doesn't exist
+   * @throws ZodError if validation fails
+   */
   createEndpoint: async (body: unknown) => {
     const parsedBody = createEndpointSchema.parse(body);
 
+    // Verify the parent app exists
     const app = await AppModel.findById(parsedBody.app_id);
     if (!app) {
-      throw httpError(404, "app_not_found",);
+      throw httpError(404, "app_not_found");
     }
 
+    // Generate a unique hook_token for the webhook URL
     const hookToken = randomBytes(12).toString("hex");
     const endpoint = await EndpointModel.create({ ...parsedBody, hook_token: hookToken });
     return endpoint.toJSON();
   },
 
+  /**
+   * Lists endpoints belonging to a specific app.
+   *
+   * @param appId - MongoDB ObjectId of the parent app
+   * @param limit - Maximum number of endpoints to return (default: 10, max: 1000)
+   * @param offset - Number of endpoints to skip (default: 0)
+   * @returns Paginated list of endpoints with has_next indicator
+   */
   listEndpointsByAppId: async (appId: string, limit?: unknown, offset?: unknown) => {
     const parsedAppId = objectIdSchema.parse(appId);
     const parsed = listSchema.parse({ limit, offset });
 
+    // Fetch one extra to determine if there are more pages
     const docs = await EndpointModel.find({ app_id: parsedAppId })
       .skip(parsed.offset)
       .limit(parsed.limit + 1);
@@ -125,6 +193,14 @@ export const endpointsService = {
     return { endpoints, has_next, limit: parsed.limit, offset: parsed.offset };
   },
 
+  /**
+   * Retrieves a single endpoint by ID.
+   *
+   * @param id - MongoDB ObjectId of the endpoint
+   * @returns The endpoint document
+   * @throws HttpError(404) if endpoint doesn't exist
+   * @throws ZodError if ID is invalid
+   */
   getEndpoint: async (id: string) => {
     const parsedId = objectIdSchema.parse(id);
     const endpoint = await EndpointModel.findById(parsedId);
@@ -134,10 +210,22 @@ export const endpointsService = {
     return endpoint.toJSON();
   },
 
+  /**
+   * Updates an existing endpoint.
+   *
+   * Only updates fields that are explicitly provided.
+   *
+   * @param id - MongoDB ObjectId of the endpoint
+   * @param body - Fields to update
+   * @returns The updated endpoint document
+   * @throws HttpError(404) if endpoint doesn't exist
+   * @throws ZodError if validation fails
+   */
   updateEndpoint: async (id: string, body: unknown) => {
     const parsedId = objectIdSchema.parse(id);
     const parsedBody = updateEndpointSchema.parse(body);
 
+    // Filter out undefined values to only update provided fields
     const update = Object.fromEntries(
       Object.entries(parsedBody).filter(([, v]) => v !== undefined)
     );
@@ -153,7 +241,17 @@ export const endpointsService = {
     return updated.toJSON();
   },
 
-
+  /**
+   * Deletes an endpoint.
+   *
+   * Note: Associated events are NOT automatically deleted.
+   * Consider implementing cascade delete if needed.
+   *
+   * @param id - MongoDB ObjectId of the endpoint
+   * @returns The deleted endpoint document
+   * @throws HttpError(404) if endpoint doesn't exist
+   * @throws ZodError if ID is invalid
+   */
   deleteEndpoint: async (id: string) => {
     const parsedId = objectIdSchema.parse(id);
     const deleted = await EndpointModel.findByIdAndDelete(parsedId);
@@ -162,4 +260,4 @@ export const endpointsService = {
     }
     return deleted.toJSON();
   }
-}
+};

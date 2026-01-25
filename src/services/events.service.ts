@@ -129,8 +129,14 @@ export const eventsService = {
 
     const sizeBytes = bodyBuffer.byteLength;
 
-    // Extract source URL from common headers
-    const sourceUrl = req.get("origin") ?? req.get("referer") ?? req.get("referrer") ?? "";
+    // Extract source information from various headers
+    // Priority: Origin (CORS), Referer (browser), X-Forwarded-Host (proxy), User-Agent (fallback identifier)
+    // Note: Most webhook providers don't send Origin/Referer since these are server-to-server calls
+    const sourceUrl = 
+      req.get("origin") ?? 
+      req.get("referer") ?? 
+      req.get("x-webhook-source") ?? // Custom header some providers use
+      "";
     const destinationUrl = buildDestinationUrl(req);
 
     // Store the complete webhook request

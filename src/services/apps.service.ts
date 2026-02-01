@@ -28,11 +28,11 @@ const DELETE_CHUNK_SIZE = 1000;
 // Validation Schemas
 // ============================================================================
 
-/** Validates MongoDB ObjectId strings */
-const objectIdSchema = z
+/** Validates App public IDs (app_...) */
+const appIdSchema = z
   .string()
   .trim()
-  .refine((v) => mongoose.isValidObjectId(v), { message: "App ID not valid" });
+  .refine((v) => v.startsWith("app_") && v.length > 4, { message: "App ID not valid" });
 
 /** Validates app name (1-200 characters) */
 const appNameSchema = z.string().trim().min(1).max(200);
@@ -119,28 +119,30 @@ export const appsService = {
   /**
    * Retrieves a single app by ID.
    *
-   * @param id - MongoDB ObjectId of the app
+   * @param id - Public ID of the app (app_...)
    * @returns The app document or null if not found
    * @throws ZodError if ID is invalid
    */
   getApp: async (id: string) => {
-    const parsedId = objectIdSchema.parse(id);
-    const app = await AppModel.findById(parsedId);
+    const parsedId = appIdSchema.parse(id);
+    const app = await AppModel.findOne({ public_id: parsedId });
     return app?.toJSON() ?? null;
   },
 
   /**
    * Updates an existing app.
    *
-   * @param id - MongoDB ObjectId of the app
+   * @param id - Public ID of the app (app_...)
    * @param body - Fields to update (name and/or description)
    * @returns The updated app document or null if not found
    * @throws ZodError if validation fails
    */
   updateApp: async (id: string, body: unknown) => {
-    const parsedId = objectIdSchema.parse(id);
+    const parsedId = appIdSchema.parse(id);
     const parsedBody = updateAppSchema.parse(body);
-    const app = await AppModel.findByIdAndUpdate(parsedId, parsedBody, { new: true });
+    const app = await AppModel.findOneAndUpdate({ public_id: parsedId }, parsedBody, {
+      new: true,
+    });
     return app?.toJSON() ?? null;
   },
 
@@ -150,25 +152,26 @@ export const appsService = {
    * Uses a MongoDB transaction to ensure atomicity.
    * Processes endpoint deletions in chunks to avoid memory issues.
    *
-   * @param id - MongoDB ObjectId of the app
+   * @param id - Public ID of the app (app_...)
    * @returns Object with deleted counts or null if app not found
    * @throws ZodError if ID is invalid
    */
   deleteApp: async (id: string) => {
-    const parsedId = objectIdSchema.parse(id);
+    const parsedId = appIdSchema.parse(id);
 
     const session = await mongoose.startSession();
     try {
       return await session.withTransaction(async () => {
         // Delete app first to confirm it exists (and to return it)
-        const deletedApp = await AppModel.findOneAndDelete({ _id: parsedId }, { session });
+        const deletedApp = await AppModel.findOneAndDelete({ public_id: parsedId }, { session });
         if (!deletedApp) return null;
+        const appObjectId = deletedApp._id;
 
         // Stream endpoint ids and delete events in chunks to avoid huge arrays
         let deletedEvents = 0;
 
         const cursor = EndpointModel.find(
-          { app_id: parsedId },
+          { app_id: appObjectId },
           { _id: 1 },
           { session }
         ).cursor();
@@ -199,7 +202,7 @@ export const appsService = {
 
         // Delete all endpoints after their events are removed
         const endpointsDeleteResult = await EndpointModel.deleteMany(
-          { app_id: parsedId },
+          { app_id: appObjectId },
           { session }
         );
 

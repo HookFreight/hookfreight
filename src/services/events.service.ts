@@ -10,7 +10,6 @@
  */
 
 import type { Request } from "express";
-import mongoose from "mongoose";
 import { z } from "zod";
 
 import { EventModel } from "../models/Event";
@@ -66,8 +65,15 @@ function buildDestinationUrl(req: Request): string {
 // Validation Schemas
 // ============================================================================
 
-/** Validates MongoDB ObjectId strings */
-const objectIdSchema = z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "Invalid ID" });
+/** Validates prefixed public IDs */
+const prefixedIdSchema = (prefix: string, message: string) =>
+  z.string().trim().refine((v) => v.startsWith(prefix) && v.length > prefix.length, { message });
+
+/** Public ID schema for endpoints */
+const endpointIdSchema = prefixedIdSchema("end_", "Invalid endpoint ID");
+
+/** Public ID schema for events */
+const eventIdSchema = prefixedIdSchema("evt_", "Invalid event ID");
 
 /** Schema for list pagination parameters */
 const listSchema = z.object({
@@ -168,17 +174,25 @@ export const eventsService = {
    *
    * Events are sorted by received time (newest first).
    *
-   * @param endpointId - MongoDB ObjectId of the endpoint
+   * @param endpointId - Public ID of the endpoint (end_...)
    * @param limit - Maximum number of events to return (default: 10, max: 50)
    * @param offset - Number of events to skip (default: 0)
    * @returns Paginated list of events with has_next indicator
    */
   listEventsByEndpointId: async (endpointId: string, limit?: unknown, offset?: unknown) => {
-    const parsedEndpointId = objectIdSchema.parse(endpointId);
+    const parsedEndpointId = endpointIdSchema.parse(endpointId);
     const parsed = listSchema.parse({ limit, offset });
 
+    const endpoint = await EndpointModel.findOne(
+      { public_id: parsedEndpointId },
+      { _id: 1, public_id: 1 }
+    );
+    if (!endpoint) {
+      return { events: [], has_next: false, limit: parsed.limit, offset: parsed.offset };
+    }
+
     // Fetch one extra to determine if there are more pages
-    const docs = await EventModel.find({ endpoint_id: parsedEndpointId })
+    const docs = await EventModel.find({ endpoint_id: endpoint._id })
       .sort({ recieved_at: -1, _id: -1 })
       .skip(parsed.offset)
       .limit(parsed.limit + 1);
@@ -186,7 +200,9 @@ export const eventsService = {
     const has_next = docs.length > parsed.limit;
 
     // Transform events for HTTP response (decode body, extract content type, etc.)
-    const events = docs.slice(0, parsed.limit).map((doc) => eventToHttpResponse(doc.toObject()));
+    const events = docs.slice(0, parsed.limit).map((doc) =>
+      eventToHttpResponse({ ...doc.toObject(), endpoint_id: endpoint.public_id })
+    );
 
     return { events, has_next, limit: parsed.limit, offset: parsed.offset };
   },
@@ -194,16 +210,21 @@ export const eventsService = {
   /**
    * Retrieves a single event by ID.
    *
-   * @param id - MongoDB ObjectId of the event
+   * @param id - Public ID of the event (evt_...)
    * @returns The event document formatted for HTTP response
    * @throws HttpError(404) if event doesn't exist
    */
   getEvent: async (id: string) => {
-    const doc = await EventModel.findById(id).exec();
+    const parsedId = eventIdSchema.parse(id);
+    const doc = await EventModel.findOne({ public_id: parsedId })
+      .populate("endpoint_id", "public_id -_id")
+      .exec();
     if (!doc) {
       throw httpError(404, "event_not_found");
     }
 
-    return eventToHttpResponse(doc.toObject());
+    const endpointPublicId = (doc.endpoint_id as { public_id?: string } | null)?.public_id;
+
+    return eventToHttpResponse({ ...doc.toObject(), endpoint_id: endpointPublicId });
   },
 };

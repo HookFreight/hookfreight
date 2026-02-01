@@ -8,6 +8,7 @@
  */
 
 import mongoose, { Schema } from "mongoose";
+import { makeAppId } from "../utils/public-id";
 
 /**
  * App document type.
@@ -18,6 +19,7 @@ import mongoose, { Schema } from "mongoose";
  * @property updatedAt - Timestamp when the app was last modified
  */
 export type App = {
+  public_id: string;
   name: string;
   description?: string;
   createdAt: Date;
@@ -33,6 +35,14 @@ export type App = {
  */
 const appSchema = new Schema<App>(
   {
+    public_id: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      immutable: true,
+      default: makeAppId,
+    },
     name: { type: String, required: true, trim: true, maxlength: 200 },
     description: { type: String, trim: true, default: "" },
   },
@@ -41,8 +51,9 @@ const appSchema = new Schema<App>(
     toJSON: {
       virtuals: true,
       transform(_doc: unknown, ret: any) {
-        // Convert MongoDB _id to id for API responses
-        ret.id = ret._id?.toString?.() ?? ret.id;
+        // Use public_id for API responses
+        ret.id = ret.public_id ?? ret.id;
+        delete ret.public_id;
         delete ret._id;
         delete ret.__v;
         return ret;

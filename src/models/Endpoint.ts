@@ -8,6 +8,7 @@
  */
 
 import mongoose, { Schema } from "mongoose";
+import { makeEndpointId } from "../utils/public-id";
 
 /**
  * Authentication configuration for forwarding webhooks.
@@ -41,6 +42,7 @@ export type EndpointAuthentication = {
  * @property updatedAt - Timestamp when last modified
  */
 export type Endpoint = {
+  public_id: string;
   name: string;
   description?: string;
   app_id: mongoose.Types.ObjectId;
@@ -79,6 +81,14 @@ const authSchema = new Schema<EndpointAuthentication>(
  */
 const endpointSchema = new Schema<Endpoint>(
   {
+    public_id: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      immutable: true,
+      default: makeEndpointId,
+    },
     name: { type: String, required: true, trim: true, maxlength: 200 },
     description: { type: String, trim: true, default: "" },
     app_id: { type: Schema.Types.ObjectId, ref: "App", required: true, index: true },
@@ -97,9 +107,9 @@ const endpointSchema = new Schema<Endpoint>(
     toJSON: {
       virtuals: true,
       transform(_doc: unknown, ret: any) {
-        // Convert MongoDB ObjectIds to strings for API responses
-        ret.id = ret._id?.toString?.() ?? ret.id;
-        ret.app_id = ret.app_id?.toString?.() ?? ret.app_id;
+        // Use public_id for API responses
+        ret.id = ret.public_id ?? ret.id;
+        delete ret.public_id;
         delete ret._id;
         delete ret.__v;
         return ret;

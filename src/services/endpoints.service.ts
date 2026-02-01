@@ -7,7 +7,6 @@
  * @license Apache-2.0
  */
 
-import mongoose from "mongoose";
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 
@@ -26,11 +25,21 @@ const MAX_LIST_LIMIT = 1000;
 // Validation Schemas
 // ============================================================================
 
+/** Validates prefixed public IDs */
+const prefixedIdSchema = (prefix: string, message: string) =>
+  z.string().trim().refine((v) => v.startsWith(prefix) && v.length > prefix.length, { message });
+
+/** Public ID schema for apps */
+const appIdSchema = prefixedIdSchema("app_", "App ID not valid");
+
+/** Public ID schema for endpoints */
+const endpointIdSchema = prefixedIdSchema("end_", "Invalid ID");
+
 /** Schema for creating a new endpoint */
 const createEndpointSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(5_000).optional(),
-  app_id: z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "App ID not valid" }),
+  app_id: appIdSchema,
   authentication: z.object({
     header_name: z.string().trim().min(1).max(200),
     header_value: z.string().trim().min(1).max(2000)
@@ -42,9 +51,6 @@ const createEndpointSchema = z.object({
   forward_url: z.string().trim().min(1).max(5_000).optional(),
   forwarding_enabled: z.boolean().optional().default(false),
 });
-
-/** Validates MongoDB ObjectId strings */
-const objectIdSchema = z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "Invalid ID" });
 
 /** Schema for list pagination parameters */
 const listSchema = z.object({
@@ -159,36 +165,52 @@ export const endpointsService = {
     const parsedBody = createEndpointSchema.parse(body);
 
     // Verify the parent app exists
-    const app = await AppModel.findById(parsedBody.app_id);
+    const app = await AppModel.findOne({ public_id: parsedBody.app_id });
     if (!app) {
       throw httpError(404, "app_not_found");
     }
 
     // Generate a unique hook_token for the webhook URL
     const hookToken = randomBytes(12).toString("hex");
-    const endpoint = await EndpointModel.create({ ...parsedBody, hook_token: hookToken });
-    return endpoint.toJSON();
+    const { app_id: _appPublicId, ...payload } = parsedBody;
+    const endpoint = await EndpointModel.create({
+      ...payload,
+      app_id: app._id,
+      hook_token: hookToken,
+    });
+    const json = endpoint.toJSON();
+    json.app_id = app.public_id;
+    return json;
   },
 
   /**
    * Lists endpoints belonging to a specific app.
    *
-   * @param appId - MongoDB ObjectId of the parent app
+   * @param appId - Public ID of the parent app (app_...)
    * @param limit - Maximum number of endpoints to return (default: 10, max: 1000)
    * @param offset - Number of endpoints to skip (default: 0)
    * @returns Paginated list of endpoints with has_next indicator
    */
   listEndpointsByAppId: async (appId: string, limit?: unknown, offset?: unknown) => {
-    const parsedAppId = objectIdSchema.parse(appId);
+    const parsedAppId = appIdSchema.parse(appId);
     const parsed = listSchema.parse({ limit, offset });
 
+    const app = await AppModel.findOne({ public_id: parsedAppId }, { _id: 1, public_id: 1 });
+    if (!app) {
+      return { endpoints: [], has_next: false, limit: parsed.limit, offset: parsed.offset };
+    }
+
     // Fetch one extra to determine if there are more pages
-    const docs = await EndpointModel.find({ app_id: parsedAppId })
+    const docs = await EndpointModel.find({ app_id: app._id })
       .skip(parsed.offset)
       .limit(parsed.limit + 1);
 
     const has_next = docs.length > parsed.limit;
-    const endpoints = docs.slice(0, parsed.limit).map((endpoint) => endpoint.toJSON());
+    const endpoints = docs.slice(0, parsed.limit).map((endpoint) => {
+      const json = endpoint.toJSON();
+      json.app_id = app.public_id;
+      return json;
+    });
 
     return { endpoints, has_next, limit: parsed.limit, offset: parsed.offset };
   },
@@ -196,18 +218,23 @@ export const endpointsService = {
   /**
    * Retrieves a single endpoint by ID.
    *
-   * @param id - MongoDB ObjectId of the endpoint
+   * @param id - Public ID of the endpoint (end_...)
    * @returns The endpoint document
    * @throws HttpError(404) if endpoint doesn't exist
    * @throws ZodError if ID is invalid
    */
   getEndpoint: async (id: string) => {
-    const parsedId = objectIdSchema.parse(id);
-    const endpoint = await EndpointModel.findById(parsedId);
+    const parsedId = endpointIdSchema.parse(id);
+    const endpoint = await EndpointModel.findOne({ public_id: parsedId })
+      .populate("app_id", "public_id -_id")
+      .exec();
     if (!endpoint) {
       throw httpError(404, "endpoint_not_found");
     }
-    return endpoint.toJSON();
+    const json = endpoint.toJSON();
+    const appPublicId = (endpoint.app_id as { public_id?: string } | null)?.public_id;
+    if (appPublicId) json.app_id = appPublicId;
+    return json;
   },
 
   /**
@@ -215,14 +242,14 @@ export const endpointsService = {
    *
    * Only updates fields that are explicitly provided.
    *
-   * @param id - MongoDB ObjectId of the endpoint
+   * @param id - Public ID of the endpoint (end_...)
    * @param body - Fields to update
    * @returns The updated endpoint document
    * @throws HttpError(404) if endpoint doesn't exist
    * @throws ZodError if validation fails
    */
   updateEndpoint: async (id: string, body: unknown) => {
-    const parsedId = objectIdSchema.parse(id);
+    const parsedId = endpointIdSchema.parse(id);
     const parsedBody = updateEndpointSchema.parse(body);
 
     // Filter out undefined values to only update provided fields
@@ -230,15 +257,20 @@ export const endpointsService = {
       Object.entries(parsedBody).filter(([, v]) => v !== undefined)
     );
 
-    const updated = await EndpointModel.findByIdAndUpdate(parsedId, update, {
+    const updated = await EndpointModel.findOneAndUpdate({ public_id: parsedId }, update, {
       new: true,
       runValidators: true
-    });
+    })
+      .populate("app_id", "public_id -_id")
+      .exec();
 
     if (!updated) {
       throw httpError(404, "endpoint_not_found");
     }
-    return updated.toJSON();
+    const json = updated.toJSON();
+    const appPublicId = (updated.app_id as { public_id?: string } | null)?.public_id;
+    if (appPublicId) json.app_id = appPublicId;
+    return json;
   },
 
   /**
@@ -247,17 +279,22 @@ export const endpointsService = {
    * Note: Associated events are NOT automatically deleted.
    * Consider implementing cascade delete if needed.
    *
-   * @param id - MongoDB ObjectId of the endpoint
+   * @param id - Public ID of the endpoint (end_...)
    * @returns The deleted endpoint document
    * @throws HttpError(404) if endpoint doesn't exist
    * @throws ZodError if ID is invalid
    */
   deleteEndpoint: async (id: string) => {
-    const parsedId = objectIdSchema.parse(id);
-    const deleted = await EndpointModel.findByIdAndDelete(parsedId);
+    const parsedId = endpointIdSchema.parse(id);
+    const deleted = await EndpointModel.findOneAndDelete({ public_id: parsedId })
+      .populate("app_id", "public_id -_id")
+      .exec();
     if (!deleted) {
       throw httpError(404, "endpoint_not_found");
     }
-    return deleted.toJSON();
+    const json = deleted.toJSON();
+    const appPublicId = (deleted.app_id as { public_id?: string } | null)?.public_id;
+    if (appPublicId) json.app_id = appPublicId;
+    return json;
   }
 };

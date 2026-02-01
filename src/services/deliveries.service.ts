@@ -39,8 +39,15 @@ const MAX_LIST_LIMIT = 1000;
 // Validation Schemas
 // ============================================================================
 
-/** Validates MongoDB ObjectId strings */
-const objectIdSchema = z.string().trim().refine((v) => mongoose.isValidObjectId(v), { message: "Invalid ID" });
+/** Validates prefixed public IDs */
+const prefixedIdSchema = (prefix: string, message: string) =>
+  z.string().trim().refine((v) => v.startsWith(prefix) && v.length > prefix.length, { message });
+
+/** Public ID schema for events */
+const eventIdSchema = prefixedIdSchema("evt_", "Invalid event ID");
+
+/** Public ID schema for deliveries */
+const deliveryIdSchema = prefixedIdSchema("dlv_", "Invalid delivery ID");
 
 /** Schema for list pagination parameters */
 const listSchema = z.object({
@@ -492,13 +499,15 @@ export const deliveriesService = {
    *
    * Creates a new job linked to the original delivery for tracking.
    *
-   * @param deliveryId - MongoDB ObjectId of the delivery to retry
+   * @param deliveryId - Public ID of the delivery to retry (dlv_...)
    * @throws Error if delivery or event not found
    */
   retryDelivery: async (deliveryId: string): Promise<void> => {
-    const parsedDeliveryId = objectIdSchema.parse(deliveryId);
+    const parsedDeliveryId = deliveryIdSchema.parse(deliveryId);
 
-    const delivery = await DeliveryModel.findById(parsedDeliveryId).lean<Delivery>().exec();
+    const delivery = await DeliveryModel.findOne({ public_id: parsedDeliveryId })
+      .lean<Delivery & { _id: mongoose.Types.ObjectId }>()
+      .exec();
     if (!delivery) {
       throw new Error("Delivery not found");
     }
@@ -514,7 +523,7 @@ export const deliveriesService = {
       {
         eventId: delivery.event_id.toString(),
         endpointId: event.endpoint_id.toString(),
-        parentDeliveryId: parsedDeliveryId,
+        parentDeliveryId: delivery._id.toString(),
       },
       {
         jobId: `retry-${parsedDeliveryId}-${Date.now()}`,
@@ -527,30 +536,47 @@ export const deliveriesService = {
   /**
    * Lists delivery attempts for a specific event.
    *
-   * @param eventId - MongoDB ObjectId of the event
+   * @param eventId - Public ID of the event (evt_...)
    * @param limit - Maximum deliveries to return (default: 20, max: 1000)
    * @param offset - Number to skip (default: 0)
    * @returns Paginated list of deliveries with has_next indicator
    */
   getDeliveriesByEventId: async (eventId: string, limit?: unknown, offset?: unknown) => {
-    const parsedEventId = objectIdSchema.parse(eventId);
+    const parsedEventId = eventIdSchema.parse(eventId);
     const parsed = listSchema.parse({ limit, offset });
 
+    const event = await EventModel.findOne({ public_id: parsedEventId }, { _id: 1, public_id: 1 });
+    if (!event) {
+      return { deliveries: [], has_next: false, limit: parsed.limit, offset: parsed.offset };
+    }
+
     // Fetch one extra to determine if there are more pages
-    const docs = await DeliveryModel.find({ event_id: parsedEventId })
+    const docs = await DeliveryModel.find({ event_id: event._id })
       .sort({ createdAt: -1 })
       .skip(parsed.offset)
       .limit(parsed.limit + 1)
-      .lean<Delivery[]>()
+      .populate("parent_delivery_id", "public_id -_id")
+      .lean<(Delivery & { _id: mongoose.Types.ObjectId; public_id: string })[]>()
       .exec();
 
     const has_next = docs.length > parsed.limit;
 
     // Parse response body for JSON display
-    const deliveries = docs.slice(0, parsed.limit).map((doc) => ({
-      ...doc,
-      response_body: parseBufferBody(doc.response_body)
-    }));
+    const deliveries = docs.slice(0, parsed.limit).map((doc) => {
+      const { _id: _mongoId, public_id, __v: _version, parent_delivery_id, ...rest } = doc as any;
+      const parent =
+        typeof parent_delivery_id === "string"
+          ? parent_delivery_id
+          : (parent_delivery_id as { public_id?: string } | null)?.public_id;
+
+      return {
+        ...rest,
+        id: public_id,
+        event_id: event.public_id,
+        ...(parent ? { parent_delivery_id: parent } : {}),
+        response_body: parseBufferBody(doc.response_body),
+      };
+    });
 
     return { deliveries, has_next, limit: parsed.limit, offset: parsed.offset };
   },

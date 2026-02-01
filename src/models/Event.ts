@@ -8,6 +8,7 @@
  */
 
 import mongoose, { Schema } from "mongoose";
+import { makeEventId } from "../utils/public-id";
 
 /**
  * Event document type.
@@ -28,6 +29,7 @@ import mongoose, { Schema } from "mongoose";
  * @property updatedAt - Timestamp when the document was last modified
  */
 export type Event = {
+  public_id: string;
   endpoint_id: mongoose.Types.ObjectId;
   recieved_at: Date;
   original_url: string;
@@ -55,6 +57,14 @@ export type Event = {
  */
 const eventSchema = new Schema<Event>(
   {
+    public_id: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      immutable: true,
+      default: makeEventId,
+    },
     endpoint_id: { type: Schema.Types.ObjectId, ref: "Endpoint", required: true, index: true },
     recieved_at: { type: Date, required: true, default: Date.now },
     original_url: { type: String, required: true, trim: true, maxlength: 5_000 },
@@ -73,8 +83,9 @@ const eventSchema = new Schema<Event>(
     toJSON: {
       virtuals: true,
       transform(_doc: unknown, ret: any) {
-        // Convert MongoDB _id to id for API responses
-        ret.id = ret._id?.toString?.() ?? ret.id;
+        // Use public_id for API responses
+        ret.id = ret.public_id ?? ret.id;
+        delete ret.public_id;
         delete ret._id;
         delete ret.__v;
         return ret;

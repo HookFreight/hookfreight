@@ -177,11 +177,11 @@ export function parseBufferBody(value: unknown): unknown {
  * Differs from the raw Event model:
  * - body is decoded and parsed (not raw Buffer)
  * - content_type and content_encoding extracted from headers
- * - _id converted to id string
+ * - public_id mapped to id string
  */
 export type EventHttpResponse = {
   id: string;
-  endpoint_id: unknown;
+  endpoint_id: string;
   recieved_at: Date;
   method: string;
   original_url: string;
@@ -201,7 +201,7 @@ export type EventHttpResponse = {
  * Transforms a raw Event document into an HTTP response format.
  *
  * Performs:
- * - ID field normalization (_id -> id)
+ * - ID field normalization (public_id -> id)
  * - Body decompression (gzip, deflate, brotli)
  * - JSON parsing (if content type indicates JSON)
  * - Content-Type and Content-Encoding extraction
@@ -211,6 +211,15 @@ export type EventHttpResponse = {
  */
 export function eventToHttpResponse(event: any): EventHttpResponse {
   const headers: any = event?.headers ?? {};
+  const endpointIdRaw = event?.endpoint_id;
+  const endpointId =
+    (typeof endpointIdRaw === "string" && endpointIdRaw.startsWith("end_")) ?
+      endpointIdRaw :
+      (typeof endpointIdRaw?.public_id === "string" ? endpointIdRaw.public_id : "");
+  const eventId =
+    (typeof event?.public_id === "string" && event.public_id.startsWith("evt_")) ?
+      event.public_id :
+      (typeof event?.id === "string" && event.id.startsWith("evt_") ? event.id : "");
 
   // Extract content headers
   const ct = firstHeaderValue(headers?.["content-type"]);
@@ -245,8 +254,8 @@ export function eventToHttpResponse(event: any): EventHttpResponse {
   const sourceUrlRaw = typeof event?.source_url === "string" ? event.source_url.trim() : "";
 
   return {
-    id: event?._id?.toString?.() ?? event?.id,
-    endpoint_id: event?.endpoint_id,
+    id: eventId,
+    endpoint_id: endpointId,
     recieved_at: event?.recieved_at,
     method: event?.method,
     original_url: event?.original_url,

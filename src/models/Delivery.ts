@@ -9,6 +9,7 @@
  */
 
 import mongoose, { Schema } from "mongoose";
+import { makeDeliveryId } from "../utils/public-id";
 
 /**
  * Possible delivery outcomes.
@@ -35,6 +36,7 @@ export type DeliveryStatus = "timeout" | "delivered" | "failed";
  * @property updatedAt - Timestamp when last modified
  */
 export type Delivery = {
+  public_id: string;
   parent_delivery_id?: mongoose.Types.ObjectId;
   status: DeliveryStatus;
   event_id: mongoose.Types.ObjectId;
@@ -59,6 +61,14 @@ export type Delivery = {
  */
 const deliverySchema = new Schema<Delivery>(
   {
+    public_id: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      immutable: true,
+      default: makeDeliveryId,
+    },
     parent_delivery_id: { type: Schema.Types.ObjectId, ref: "Delivery", required: false, index: true },
     status: { type: String, required: true, enum: ["timeout", "delivered", "failed"], index: true },
     event_id: { type: Schema.Types.ObjectId, ref: "Event", required: true, index: true },
@@ -74,8 +84,9 @@ const deliverySchema = new Schema<Delivery>(
     toJSON: {
       virtuals: true,
       transform(_doc: unknown, ret: any) {
-        // Convert MongoDB _id to id for API responses
-        ret.id = ret._id?.toString?.() ?? ret.id;
+        // Use public_id for API responses
+        ret.id = ret.public_id ?? ret.id;
+        delete ret.public_id;
         delete ret._id;
         delete ret.__v;
         return ret;

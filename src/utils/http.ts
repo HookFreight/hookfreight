@@ -182,6 +182,7 @@ export function parseBufferBody(value: unknown): unknown {
 export type EventHttpResponse = {
   id: string;
   endpoint_id: string;
+  auth_status: string;
   recieved_at: Date;
   method: string;
   original_url: string;
@@ -256,6 +257,7 @@ export function eventToHttpResponse(event: any): EventHttpResponse {
   return {
     id: eventId,
     endpoint_id: endpointId,
+    auth_status: event?.auth_status ?? "passed",
     recieved_at: event?.recieved_at,
     method: event?.method,
     original_url: event?.original_url,

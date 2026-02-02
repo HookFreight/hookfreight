@@ -11,6 +11,14 @@ import mongoose, { Schema } from "mongoose";
 import { makeEventId } from "../utils/public-id";
 
 /**
+ * Authentication status for events.
+ * - "passed": Authentication check passed or no authentication required
+ * - "unauthorized": Authentication check failed
+ * - "disabled": Endpoint is inactive
+ */
+export type EventAuthStatus = "passed" | "unauthorized" | "disabled";
+
+/**
  * Event document type.
  *
  * @property endpoint_id - Reference to the Endpoint that received this webhook
@@ -25,6 +33,7 @@ import { makeEventId } from "../utils/public-id";
  * @property source_ip - Client IP address
  * @property user_agent - User-Agent header value
  * @property size_bytes - Size of the request body in bytes
+ * @property auth_status - Authentication/availability status
  * @property createdAt - Timestamp when the document was created
  * @property updatedAt - Timestamp when the document was last modified
  */
@@ -42,6 +51,7 @@ export type Event = {
   source_ip?: string;
   user_agent?: string;
   size_bytes: number;
+  auth_status: EventAuthStatus;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -76,7 +86,8 @@ const eventSchema = new Schema<Event>(
     body: { type: Buffer, required: true },
     source_ip: { type: String, required: false },
     user_agent: { type: String, required: false },
-    size_bytes: { type: Number, required: true }
+    size_bytes: { type: Number, required: true },
+    auth_status: { type: String, required: true, enum: ["passed", "unauthorized", "disabled"], default: "passed", index: true }
   },
   {
     timestamps: true,

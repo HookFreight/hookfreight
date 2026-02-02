@@ -12,7 +12,7 @@
 import type { Request } from "express";
 import { z } from "zod";
 
-import { EventModel } from "../models/Event";
+import { EventModel, EventAuthStatus } from "../models/Event";
 import { EndpointModel } from "../models/Endpoint";
 import { eventToHttpResponse, httpError } from "../utils/http";
 import { deliveriesService } from "./deliveries.service";
@@ -124,6 +124,8 @@ export const eventsService = {
     // TODO: MATCH HEADERS AND BODY AGAINST ENDPOINT CONFIGURATION. IF MATCH, RETURN 200. IF NOT, RETURN 400.
     // TODO: ADD RATE LIMITING/RATE LIMITING DURATION AND HTTP TIMEOUT FROM ENDPOINT CONFIG.
 
+    const authStatus: EventAuthStatus = endpoint.is_active ? "passed" : "disabled";
+
     // Get the raw body (prefer rawBody from middleware, fall back to parsed body)
     const bodyBuffer =
       Buffer.isBuffer(req.rawBody) ? req.rawBody :
@@ -158,13 +160,18 @@ export const eventsService = {
       body: bodyBuffer,
       source_ip: req.ip,
       user_agent: req.get("user-agent"),
-      size_bytes: sizeBytes
+      size_bytes: sizeBytes,
+      auth_status: authStatus
     });
 
     // Queue for delivery (fire and forget - don't block the response)
-    deliveriesService.handleEvent(event).catch((err) => {
-      console.error("[EventsService] Failed to queue event for delivery:", err);
-    });
+    if (authStatus === "passed") {
+      deliveriesService.handleEvent(event).catch((err) => {
+        console.error("[EventsService] Failed to queue event for delivery:", err);
+      });
+    } else {
+      console.log(`[EventsService] Event ${event.public_id} blocked due to inactive endpoint`);
+    }
 
     return event;
   },

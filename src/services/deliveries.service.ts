@@ -34,6 +34,7 @@ const DELIVERY_QUEUE_NAME = "webhook-deliveries";
 
 /** Maximum number of deliveries to return in a list query */
 const MAX_LIST_LIMIT = 1000;
+const HOOK_TOKEN_PATH_REGEX = /^\/[a-f0-9]{24}$/i;
 
 // ============================================================================
 // Validation Schemas
@@ -127,6 +128,25 @@ function createRedisConnection(): IORedis {
 // Delivery Logic
 // ============================================================================
 
+function normalizeHost(url: URL): string {
+  const port = url.port || (url.protocol === "https:" ? "443" : "80");
+  return `${url.hostname.toLowerCase()}:${port}`;
+}
+
+function isHookfreightWebhookUrl(forwardUrl: string): boolean {
+  try {
+    const target = new URL(forwardUrl);
+    const base = new URL(config.HOOKFREIGHT_BASE_URL);
+    if (normalizeHost(target) !== normalizeHost(base)) {
+      return false;
+    }
+    const normalizedPath = target.pathname.replace(/\/+$/, "");
+    return HOOK_TOKEN_PATH_REGEX.test(normalizedPath);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Builds headers for the forwarded webhook request.
  *
@@ -206,6 +226,15 @@ async function attemptDelivery(eventId: string, endpointId: string): Promise<Del
         status: "failed",
         duration: Date.now() - startTime,
         errorMessage: "Forwarding not enabled or URL not configured"
+      };
+    }
+
+    if (isHookfreightWebhookUrl(endpoint.forward_url)) {
+      return {
+        success: false,
+        status: "failed",
+        duration: Date.now() - startTime,
+        errorMessage: "Forward URL points to a HookFreight webhook URL"
       };
     }
 

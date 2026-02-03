@@ -10,8 +10,9 @@
 import { z } from "zod";
 import { randomBytes } from "node:crypto";
 
-import { EndpointModel } from "../models/Endpoint";
+import { EndpointModel, Endpoint } from "../models/Endpoint";
 import { AppModel } from "../models/App";
+import { config } from "../config";
 import { httpError } from "../utils/http";
 
 // ============================================================================
@@ -20,6 +21,7 @@ import { httpError } from "../utils/http";
 
 /** Maximum number of items to return in a list query */
 const MAX_LIST_LIMIT = 1000;
+const HOOK_TOKEN_PATH_REGEX = /^\/[a-f0-9]{24}$/i;
 
 // ============================================================================
 // Validation Schemas
@@ -65,6 +67,31 @@ const listSchema = z.object({
 // ============================================================================
 // Update Schema Helpers
 // ============================================================================
+
+function normalizeHost(url: URL): string {
+  const port = url.port || (url.protocol === "https:" ? "443" : "80");
+  return `${url.hostname.toLowerCase()}:${port}`;
+}
+
+function isHookfreightWebhookUrl(forwardUrl: string): boolean {
+  try {
+    const target = new URL(forwardUrl);
+    const base = new URL(config.HOOKFREIGHT_BASE_URL);
+    if (normalizeHost(target) !== normalizeHost(base)) {
+      return false;
+    }
+    const normalizedPath = target.pathname.replace(/\/+$/, "");
+    return HOOK_TOKEN_PATH_REGEX.test(normalizedPath);
+  } catch {
+    return false;
+  }
+}
+
+function assertForwardUrlIsSafe(forwardUrl: string): void {
+  if (isHookfreightWebhookUrl(forwardUrl)) {
+    throw httpError(400, "forward_url_targets_hookfreight_webhook");
+  }
+}
 
 /** Converts empty strings to undefined for optional field handling */
 const emptyStringToUndefined = (v: unknown) =>
@@ -164,6 +191,10 @@ export const endpointsService = {
   createEndpoint: async (body: unknown) => {
     const parsedBody = createEndpointSchema.parse(body);
 
+    if (parsedBody.forward_url) {
+      assertForwardUrlIsSafe(parsedBody.forward_url);
+    }
+
     // Verify the parent app exists
     const app = await AppModel.findOne({ public_id: parsedBody.app_id });
     if (!app) {
@@ -251,6 +282,23 @@ export const endpointsService = {
   updateEndpoint: async (id: string, body: unknown) => {
     const parsedId = endpointIdSchema.parse(id);
     const parsedBody = updateEndpointSchema.parse(body);
+
+    if (parsedBody.forward_url !== undefined) {
+      assertForwardUrlIsSafe(parsedBody.forward_url);
+    }
+
+    if (parsedBody.forwarding_enabled === true && parsedBody.forward_url === undefined) {
+      const existing = await EndpointModel.findOne(
+        { public_id: parsedId },
+        { forward_url: 1 }
+      ).lean<Pick<Endpoint, "forward_url">>();
+      if (!existing) {
+        throw httpError(404, "endpoint_not_found");
+      }
+      if (existing.forward_url) {
+        assertForwardUrlIsSafe(existing.forward_url);
+      }
+    }
 
     // Filter out undefined values to only update provided fields
     const update = Object.fromEntries(

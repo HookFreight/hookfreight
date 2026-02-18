@@ -400,14 +400,28 @@ function getDeliveryWorker(): Worker<DeliveryJobData> {
         const delivery = await recordDelivery(eventId, endpointId, result, parentDeliveryId);
 
         if (!result.success) {
-          // Update job data to chain retries together
-          await job.updateData({
-            ...job.data,
-            parentDeliveryId: delivery._id.toString(),
-          });
+          // 4xx responses are client errors (bad payload, auth, etc.) -- retrying won't help.
+          // Only retry on 5xx, timeouts, and network errors (no response status).
+          const status = result.responseStatus;
+          const isRetryable = !status || status >= 500 || result.status === "timeout";
 
-          // Throw to trigger BullMQ retry
-          throw new Error(result.errorMessage ?? "Delivery failed");
+          if (isRetryable) {
+            await job.updateData({
+              ...job.data,
+              parentDeliveryId: delivery._id.toString(),
+            });
+            throw new Error(result.errorMessage ?? "Delivery failed");
+          }
+
+          // Non-retryable failure -- move straight to failed without further attempts
+          console.warn(
+            `[DeliveryWorker] Event ${eventId} failed with non-retryable status ${status}, skipping retry`
+          );
+          await job.moveToFailed(
+            new Error(result.errorMessage ?? `Non-retryable status ${status}`),
+            job.token ?? "",
+            false
+          );
         }
 
         console.log(`[DeliveryWorker] Job ${job.id} completed successfully`);

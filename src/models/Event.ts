@@ -1,7 +1,7 @@
 /**
  * @fileoverview Event model definition.
  *
- * Events represent captured webhook requests received by HookFreight.
+ * Events represent captured webhook requests received by Hookfreight.
  * Each event stores the complete HTTP request data including headers, body, and metadata.
  *
  * @license Apache-2.0

@@ -1,5 +1,5 @@
 /**
- * @fileoverview Application entry point for HookFreight.
+ * @fileoverview Application entry point for Hookfreight.
  *
  * Bootstraps the application by:
  * 1. Connecting to MongoDB
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
 
   const server = app.listen(config.HOOKFREIGHT_PORT, config.HOOKFREIGHT_HOST, () => {
     console.log(
-      `HookFreight listening on http://${config.HOOKFREIGHT_HOST}:${config.HOOKFREIGHT_PORT} (base: ${config.HOOKFREIGHT_BASE_URL})`
+      `Hookfreight listening on http://${config.HOOKFREIGHT_HOST}:${config.HOOKFREIGHT_PORT} (base: ${config.HOOKFREIGHT_BASE_URL})`
     );
   });
 

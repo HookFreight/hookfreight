@@ -150,7 +150,7 @@ function isHookfreightWebhookUrl(forwardUrl: string): boolean {
 /**
  * Builds headers for the forwarded webhook request.
  *
- * Forwards a safe subset of original headers and adds HookFreight metadata.
+ * Forwards a safe subset of original headers and adds Hookfreight metadata.
  * Applies endpoint authentication if configured.
  *
  * @param originalHeaders - Headers from the original webhook request
@@ -173,7 +173,7 @@ function buildForwardHeaders(
     }
   }
 
-  // Add HookFreight metadata headers
+  // Add Hookfreight metadata headers
   headers["x-hookfreight-forwarded"] = "true";
   headers["x-hookfreight-timestamp"] = new Date().toISOString();
 
@@ -234,7 +234,7 @@ async function attemptDelivery(eventId: string, endpointId: string): Promise<Del
         success: false,
         status: "failed",
         duration: Date.now() - startTime,
-        errorMessage: "Forward URL points to a HookFreight webhook URL"
+        errorMessage: "Forward URL points to a Hookfreight webhook URL"
       };
     }
 

@@ -1,10 +1,10 @@
-# HookFreight
+# Hookfreight
 
 Open-source webhook inbox and replay engine. Capture, store, forward, and replay webhooks with retries and full visibility.
 
 ## What it does
 
-HookFreight sits between webhook providers (Stripe, GitHub, Shopify, etc.) and your app:
+Hookfreight sits between webhook providers (Stripe, GitHub, Shopify, etc.) and your app:
 
 1. Receives webhooks at a unique URL (`/{hook_token}`)
 2. Stores the full request (headers, body, metadata)
@@ -44,7 +44,7 @@ Edit `.env` as needed (the defaults work for local Docker).
 docker compose up --build
 ```
 
-HookFreight will be available at **http://localhost:3030**
+Hookfreight will be available at **http://localhost:3030**
 
 > **Next steps:** See the [Quickstart Guide](https://docs.hookfreight.com/quickstart) for creating your first app and endpoint.
 
@@ -52,7 +52,7 @@ HookFreight will be available at **http://localhost:3030**
 
 ### Inbound URL
 
-When you create an Endpoint, HookFreight returns a `hook_token`. Point your webhook provider to:
+When you create an Endpoint, Hookfreight returns a `hook_token`. Point your webhook provider to:
 
 ```
 http://<your-host>/{hook_token}

@@ -1,7 +1,7 @@
 /**
  * @fileoverview App model definition.
  *
- * Apps are the top-level organizational unit in HookFreight.
+ * Apps are the top-level organizational unit in Hookfreight.
  * They group related endpoints together (e.g., by project or environment).
  *
  * @license Apache-2.0

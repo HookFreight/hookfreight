@@ -13,7 +13,7 @@ import { makeEndpointId } from "../utils/public-id";
 /**
  * Authentication configuration for forwarding webhooks.
  *
- * When set, HookFreight adds this header to forwarded requests.
+ * When set, Hookfreight adds this header to forwarded requests.
  * Commonly used for Bearer tokens or API keys.
  *
  * @property header_name - HTTP header name (e.g., "Authorization")

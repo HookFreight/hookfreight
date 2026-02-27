@@ -1,5 +1,5 @@
 /**
- * @fileoverview Express application factory for HookFreight.
+ * @fileoverview Express application factory for Hookfreight.
  *
  * Creates and configures the Express application with all middleware and routes.
  * Separating app creation from server startup enables easier testing.

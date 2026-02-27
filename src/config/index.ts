@@ -1,5 +1,5 @@
 /**
- * @fileoverview Environment configuration module for HookFreight.
+ * @fileoverview Environment configuration module for Hookfreight.
  *
  * Loads and validates all environment variables using Zod schemas.
  * Configuration is parsed once at startup and exported as a typed object.
